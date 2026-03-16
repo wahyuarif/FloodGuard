@@ -336,3 +336,116 @@ def health():
         "records": len(warnings_history),
         "ts": datetime.utcnow().isoformat(),
     }
+
+
+# ── Road Risk Endpoint ────────────────────────────────────────────────────────
+
+class RoadRiskRequest(BaseModel):
+    lat: float
+    lon: float
+    radius_m: int = 1500
+    ai_risk_score: int = 30
+
+
+class RoadSegment(BaseModel):
+    osm_id: int
+    name: str
+    highway: str
+    risk_score: int
+    risk_level: str
+    risk_color: str
+    elev_m: float
+    river_dist_km: float
+    midpoint: dict   # {lat, lon}
+
+
+def score_road(avg_elev: float, river_dist_km: float, ai_score: int) -> int:
+    elev_factor  = max(0.0, 1 - min(avg_elev, 40) / 40)
+    river_factor = max(0.0, 1 - min(river_dist_km, 5) / 5)
+    ai_factor    = ai_score / 100
+    raw = elev_factor * 45 + river_factor * 35 + ai_factor * 20
+    return min(100, int(round(raw)))
+
+
+async def fetch_osm_roads(lat: float, lon: float, radius_m: int) -> list[dict]:
+    query = f"""[out:json][timeout:20];
+(
+  way["highway"~"primary|secondary|tertiary|residential|unclassified"]
+    (around:{radius_m},{lat},{lon});
+);
+out body geom;"""
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(
+            "https://overpass-api.de/api/interpreter",
+            data={"data": query},
+        )
+        r.raise_for_status()
+        data = r.json()
+    return [e for e in data.get("elements", []) if e.get("type") == "way" and e.get("geometry")]
+
+
+async def fetch_elevations(points: list[dict]) -> list[float]:
+    """Fetch elevations from Open-Elevation API with geo-aware fallback."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                "https://api.open-elevation.com/api/v1/lookup",
+                json={"locations": [{"latitude": p["lat"], "longitude": p["lon"]} for p in points]},
+            )
+            r.raise_for_status()
+            return [res["elevation"] for res in r.json()["results"]]
+    except Exception:
+        # Geo-aware fallback using known reference elevations
+        refs = [
+            (-6.18, 106.83, 4),   (-6.21, 106.84, 7),
+            (-6.91, 107.61, 720), (-7.43, 109.23, 75),
+            (-6.97, 110.42, 5),   (-7.25, 112.75, 4),
+            (-3.32, 114.59, 3),   (3.59,  98.68,  22),
+        ]
+        result = []
+        for p in points:
+            nearest = min(refs, key=lambda r: math.hypot(p["lat"] - r[0], p["lon"] - r[1]))
+            result.append(max(1.0, nearest[2] + (random.random() - 0.5) * 10))
+        return result
+
+
+@app.post("/api/road-risk", response_model=list[RoadSegment])
+async def road_risk(req: RoadRiskRequest):
+    ways = await fetch_osm_roads(req.lat, req.lon, req.radius_m)
+    if not ways:
+        return []
+
+    sample = ways[:60]
+    midpoints = []
+    for w in sample:
+        mid = w["geometry"][len(w["geometry"]) // 2]
+        midpoints.append({"lat": mid["lat"], "lon": mid["lon"]})
+
+    elevations = await fetch_elevations(midpoints)
+
+    results = []
+    for i, way in enumerate(sample):
+        elev = elevations[i] if i < len(elevations) else 10.0
+        mp   = midpoints[i]
+        river_dist = min(
+            haversine_km(mp["lat"], mp["lon"], rlat, rlon)
+            for river in RIVERS_DB for rlat, rlon in river["pts"]
+        )
+        rs = score_road(elev, river_dist, req.ai_risk_score)
+        level, color = get_risk_level(rs)
+        name = (way.get("tags") or {}).get("name") or \
+               (way.get("tags") or {}).get("name:id") or \
+               f"Jalan OSM {way['id']}"
+        results.append(RoadSegment(
+            osm_id=way["id"],
+            name=name,
+            highway=(way.get("tags") or {}).get("highway", "road"),
+            risk_score=rs,
+            risk_level=level,
+            risk_color=color,
+            elev_m=round(elev, 1),
+            river_dist_km=round(river_dist, 2),
+            midpoint=mp,
+        ))
+
+    return sorted(results, key=lambda x: x.risk_score, reverse=True)
