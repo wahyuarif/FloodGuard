@@ -64,18 +64,51 @@ def get_risk_color_bg(score: int) -> str:
     return                  "#FCEBEB"
 
 
+def geo_risk_profile(lat: float, lon: float) -> dict:
+    import math
+    hotspots = [
+        {"lat": -6.18, "lon": 106.83, "r": 0.7, "risk": 0.90, "label": "Jakarta Utara/Barat"},
+        {"lat": -6.21, "lon": 106.84, "r": 0.5, "risk": 0.80, "label": "Jakarta Pusat/Timur"},
+        {"lat": -6.24, "lon": 107.00, "r": 0.5, "risk": 0.70, "label": "Bekasi"},
+        {"lat": -6.97, "lon": 110.42, "r": 0.4, "risk": 0.75, "label": "Semarang"},
+        {"lat": -7.25, "lon": 112.75, "r": 0.4, "risk": 0.65, "label": "Surabaya"},
+        {"lat": -3.32, "lon": 114.59, "r": 0.5, "risk": 0.85, "label": "Banjarmasin"},
+        {"lat": -2.99, "lon": 104.76, "r": 0.4, "risk": 0.72, "label": "Palembang"},
+        {"lat":  3.59, "lon":  98.67, "r": 0.4, "risk": 0.68, "label": "Medan"},
+    ]
+    safezones = [
+        {"lat": -7.43, "lon": 109.23, "r": 0.8, "risk": 0.10, "label": "Pegunungan Banyumas"},
+        {"lat": -6.91, "lon": 107.61, "r": 0.5, "risk": 0.30, "label": "Bandung"},
+        {"lat": -7.80, "lon": 110.36, "r": 0.4, "risk": 0.25, "label": "Yogyakarta"},
+        {"lat": -7.97, "lon": 112.63, "r": 0.4, "risk": 0.20, "label": "Malang"},
+        {"lat": -8.34, "lon": 115.09, "r": 0.6, "risk": 0.18, "label": "Bali Tengah"},
+    ]
+    best_hot  = min(hotspots,  key=lambda z: math.hypot(lat-z["lat"], lon-z["lon"]))
+    best_safe = min(safezones, key=lambda z: math.hypot(lat-z["lat"], lon-z["lon"]))
+    d_hot  = math.hypot(lat - best_hot["lat"],  lon - best_hot["lon"])
+    d_safe = math.hypot(lat - best_safe["lat"], lon - best_safe["lon"])
+    if d_safe < best_safe["r"] and (d_hot >= best_hot["r"] or d_safe < d_hot):
+        return {"base_risk": best_safe["risk"], "label": best_safe["label"], "type": "safe"}
+    if d_hot < best_hot["r"]:
+        return {"base_risk": best_hot["risk"], "label": best_hot["label"], "type": "hotspot"}
+    is_low = (-3 < lat < 4 and 108 < lon < 117) or (-5 < lat < 6 and 95 < lon < 108)
+    return {"base_risk": 0.55 if is_low else 0.30, "label": "Dataran Rendah" if is_low else "Wilayah Umum", "type": "generic"}
+
+
 def simulate_weather(lat: float, lon: float) -> dict:
-    seed = int(abs(lat * 1000 + lon * 100)) % 1000
-    random.seed(seed + int(datetime.utcnow().hour))
-    rain = round(random.uniform(0, 50), 1)
+    geo = geo_risk_profile(lat, lon)
+    br = geo["base_risk"]
+    is_rainy = datetime.utcnow().month in (10, 11, 12, 1, 2, 3, 4)
+    rain_ceiling = 38 if is_rainy else 18
+    rain = max(0.0, min(rain_ceiling, br * rain_ceiling + (random.random() - 0.3) * rain_ceiling * 0.6))
     return {
-        "rainfall_intensity": rain,
-        "rainfall_duration": round(random.uniform(0, 8), 1),
-        "humidity": round(random.uniform(60, 98), 1),
-        "pressure": round(random.uniform(1004, 1016), 1),
-        "temperature": round(random.uniform(24, 35), 1),
-        "wind_speed": round(random.uniform(0, 14), 1),
-        "forecast_rain_24h": round(random.uniform(0, 90), 1),
+        "rainfall_intensity": round(rain, 1),
+        "rainfall_duration":  round(random.random() * 5 * br + random.random() * 1.5, 1),
+        "humidity":           round(55 + br * 30 + random.random() * 15, 1),
+        "pressure":           round(1016 - br * 10 - random.random() * 4, 1),
+        "temperature":        round(23 + random.random() * 10, 1),
+        "wind_speed":         round(random.random() * 10, 1),
+        "forecast_rain_24h":  round(max(0, min(60, br * 50 + (random.random() - 0.3) * 20)), 1),
     }
 
 
