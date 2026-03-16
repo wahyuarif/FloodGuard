@@ -44,6 +44,7 @@ class RiskResponse(BaseModel):
     analysis: str
     recommendations: list[str]
     nearest_river: str
+    nearest_rivers: list[dict]   # [{name, km}, ...] top 3
     flood_zone: str
     weather: dict
     timestamp: str
@@ -144,28 +145,83 @@ async def fetch_real_weather(lat: float, lon: float) -> dict:
         return simulate_weather(lat, lon)
 
 
+# ── River database — mirrors frontend RIVERS_DB exactly ──────────────────────
+RIVERS_DB = [
+    {"name": "Sungai Ciliwung",   "pts": [(-6.10,106.83),(-6.18,106.84),(-6.25,106.85),(-6.38,106.89)]},
+    {"name": "Kali Angke",        "pts": [(-6.11,106.76),(-6.15,106.77),(-6.20,106.75),(-6.27,106.73)]},
+    {"name": "Kali Sunter",       "pts": [(-6.12,106.90),(-6.17,106.91),(-6.22,106.90)]},
+    {"name": "Kali Pesanggrahan", "pts": [(-6.15,106.73),(-6.22,106.74),(-6.28,106.75)]},
+    {"name": "Kali Krukut",       "pts": [(-6.14,106.80),(-6.19,106.80),(-6.24,106.81)]},
+    {"name": "Kali Cisadane",     "pts": [(-6.17,106.64),(-6.23,106.65),(-6.30,106.65)]},
+    {"name": "Sungai Bekasi",     "pts": [(-6.24,107.00),(-6.28,107.02),(-6.34,107.05)]},
+    {"name": "Sungai Citarum",    "pts": [(-6.38,107.07),(-6.55,107.20),(-6.72,107.45),(-6.90,107.62)]},
+    {"name": "Sungai Cimanuk",    "pts": [(-6.80,108.10),(-6.85,108.20),(-6.90,108.35)]},
+    {"name": "Sungai Serayu",     "pts": [(-7.20,109.10),(-7.35,109.23),(-7.44,109.40),(-7.50,109.55)]},
+    {"name": "Sungai Pemali",     "pts": [(-6.90,108.97),(-6.95,109.10),(-7.00,109.18)]},
+    {"name": "Sungai Comal",      "pts": [(-7.05,109.35),(-7.10,109.45),(-7.15,109.50)]},
+    {"name": "Kali Garang",       "pts": [(-7.10,110.32),(-6.98,110.40),(-6.93,110.45)]},
+    {"name": "Sungai Lusi",       "pts": [(-6.95,110.92),(-7.00,111.00),(-7.05,111.05)]},
+    {"name": "Bengawan Solo",     "pts": [(-7.55,110.83),(-7.33,111.20),(-7.18,111.47),(-7.08,111.88),(-6.88,112.42)]},
+    {"name": "Sungai Brantas",    "pts": [(-7.97,112.62),(-7.80,112.40),(-7.60,112.15),(-7.42,112.15),(-7.25,112.72)]},
+    {"name": "Sungai Progo",      "pts": [(-7.97,110.10),(-7.78,110.28),(-7.64,110.38)]},
+    {"name": "Kali Opak",         "pts": [(-7.97,110.44),(-7.80,110.50),(-7.67,110.55)]},
+    {"name": "Sungai Sampean",    "pts": [(-7.72,113.85),(-7.65,113.95),(-7.59,114.02)]},
+    {"name": "Sungai Musi",       "pts": [(-2.50,103.80),(-2.99,104.74),(-3.20,105.10)]},
+    {"name": "Sungai Batanghari", "pts": [(-1.60,103.00),(-1.55,103.55),(-1.50,104.00)]},
+    {"name": "Sungai Kampar",     "pts": [( 0.20,101.00),( 0.10,101.40),( 0.05,101.90)]},
+    {"name": "Sungai Siak",       "pts": [( 0.52,101.45),( 0.48,101.80),( 0.40,102.10)]},
+    {"name": "Sungai Rokan",      "pts": [( 1.60,100.40),( 1.50,100.80),( 1.40,101.30)]},
+    {"name": "Sungai Deli",       "pts": [( 3.70, 98.65),( 3.59, 98.68),( 3.47, 98.72)]},
+    {"name": "Sungai Wampu",      "pts": [( 3.80, 98.20),( 3.72, 98.35),( 3.65, 98.50)]},
+    {"name": "Sungai Asahan",     "pts": [( 3.10, 99.35),( 2.90, 99.55),( 2.70, 99.75)]},
+    {"name": "Sungai Hari",       "pts": [(-1.80,102.70),(-1.90,103.00),(-2.00,103.30)]},
+    {"name": "Sungai Barito",     "pts": [(-3.32,114.59),(-2.80,114.55),(-2.00,114.50),(-1.00,114.45)]},
+    {"name": "Sungai Mahakam",    "pts": [(-0.50,117.15),(-0.80,116.90),(-1.00,116.40),(-1.20,115.80)]},
+    {"name": "Sungai Kapuas",     "pts": [(-0.03,109.33),(-0.20,109.80),(-0.50,110.40),(-1.00,111.50)]},
+    {"name": "Sungai Kahayan",    "pts": [(-1.30,113.90),(-1.80,113.80),(-2.30,113.70)]},
+    {"name": "Sungai Katingan",   "pts": [(-1.70,113.00),(-2.20,113.05),(-2.70,113.10)]},
+    {"name": "Sungai Poso",       "pts": [(-1.38,120.75),(-1.50,120.65),(-1.70,120.55)]},
+    {"name": "Sungai Lariang",    "pts": [(-1.40,119.90),(-1.55,119.80),(-1.70,119.70)]},
+    {"name": "Sungai Maros",      "pts": [(-4.99,119.58),(-5.10,119.62),(-5.20,119.65)]},
+    {"name": "Sungai Mamberamo",  "pts": [(-2.00,137.80),(-2.50,137.80),(-3.00,137.80)]},
+    {"name": "Sungai Digul",      "pts": [(-6.50,139.40),(-6.80,139.00),(-7.10,138.50)]},
+]
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def dist_to_river(lat: float, lon: float, river: dict) -> float:
+    return min(haversine_km(lat, lon, rlat, rlon) for rlat, rlon in river["pts"])
+
+
+def get_nearest_rivers(lat: float, lon: float, n: int = 3) -> list[dict]:
+    scored = [{"name": r["name"], "km": round(dist_to_river(lat, lon, r), 2)} for r in RIVERS_DB]
+    return sorted(scored, key=lambda x: x["km"])[:n]
+
+
 def get_nearest_river(lat: float, lon: float) -> str:
-    rivers = [
-        ((-6.14, 106.81), "Sungai Ciliwung"),
-        ((-6.18, 106.75), "Sungai Pesanggrahan"),
-        ((-6.20, 106.89), "Kali Sunter"),
-        ((-6.16, 106.85), "Kali Malang"),
-        ((-6.12, 106.78), "Kali Angke"),
-        ((-6.22, 106.83), "Kali Krukut"),
-    ]
-    nearest, min_d = "Sungai Ciliwung", float("inf")
-    for (rlat, rlon), name in rivers:
-        d = math.sqrt((lat - rlat) ** 2 + (lon - rlon) ** 2)
-        if d < min_d:
-            min_d, nearest = d, name
-    return nearest
+    return get_nearest_rivers(lat, lon, 1)[0]["name"]
 
 
 def get_flood_zone(lat: float, lon: float) -> str:
-    zones = ["Zona Merah (Rawan Tinggi)", "Zona Kuning (Rawan Sedang)", "Zona Hijau (Relatif Aman)"]
-    if -6.20 <= lat <= -6.10 and 106.75 <= lon <= 106.95:
-        return random.choices(zones, weights=[0.35, 0.40, 0.25])[0]
-    return "Zona Kuning (Rawan Sedang)"
+    geo = geo_risk_profile(lat, lon)
+    if geo["type"] == "hotspot":
+        return random.choices(
+            ["Zona Merah (Rawan Tinggi)", "Zona Kuning (Rawan Sedang)"],
+            weights=[0.6, 0.4]
+        )[0]
+    if geo["type"] == "safe":
+        return "Zona Hijau (Relatif Aman)"
+    return random.choices(
+        ["Zona Kuning (Rawan Sedang)", "Zona Hijau (Relatif Aman)"],
+        weights=[0.6, 0.4]
+    )[0]
 
 
 async def analyze_with_groq(weather: dict, location: LocationRequest, river: str, zone: str) -> dict:
@@ -241,7 +297,8 @@ def root():
 @app.post("/api/analyze", response_model=RiskResponse)
 async def analyze(req: LocationRequest):
     weather   = await fetch_real_weather(req.lat, req.lon)
-    river     = get_nearest_river(req.lat, req.lon)
+    rivers    = get_nearest_rivers(req.lat, req.lon, 3)
+    river     = rivers[0]["name"]
     zone      = get_flood_zone(req.lat, req.lon)
     ai        = await analyze_with_groq(weather, req, river, zone)
     ts        = datetime.utcnow().isoformat()
@@ -260,7 +317,8 @@ async def analyze(req: LocationRequest):
         risk_score=ai["risk_score"], risk_level=ai["risk_level"],
         risk_color=ai["risk_color"], analysis=ai["analysis"],
         recommendations=ai["recommendations"], nearest_river=river,
-        flood_zone=zone, weather=weather, timestamp=ts, source=ai["source"],
+        nearest_rivers=rivers, flood_zone=zone, weather=weather,
+        timestamp=ts, source=ai["source"],
     )
 
 
