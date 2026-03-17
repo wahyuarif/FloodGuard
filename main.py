@@ -67,22 +67,57 @@ def get_risk_color_bg(score: int) -> str:
 
 def geo_risk_profile(lat: float, lon: float) -> dict:
     import math
+    # Berdasarkan data BNPB: Sumut 112, Jabar 107, Aceh 97, Jateng 95,
+    # Riau 79, Sumbar 72, NTB 69, Sulteng 61, Sulsel 52, Kalsel 48 kasus
     hotspots = [
+        # Sumatera Utara (112 kasus)
+        {"lat":  3.59, "lon":  98.67, "r": 0.6, "risk": 0.88, "label": "Medan & sekitar"},
+        {"lat":  2.30, "lon":  99.08, "r": 0.5, "risk": 0.80, "label": "Deli Serdang - Langkat"},
+        {"lat":  1.48, "lon":  99.27, "r": 0.4, "risk": 0.75, "label": "Tapanuli pesisir"},
+        # Jawa Barat & Jakarta (107 kasus)
         {"lat": -6.18, "lon": 106.83, "r": 0.7, "risk": 0.90, "label": "Jakarta Utara/Barat"},
-        {"lat": -6.21, "lon": 106.84, "r": 0.5, "risk": 0.80, "label": "Jakarta Pusat/Timur"},
-        {"lat": -6.24, "lon": 107.00, "r": 0.5, "risk": 0.70, "label": "Bekasi"},
-        {"lat": -6.97, "lon": 110.42, "r": 0.4, "risk": 0.75, "label": "Semarang"},
-        {"lat": -7.25, "lon": 112.75, "r": 0.4, "risk": 0.65, "label": "Surabaya"},
-        {"lat": -3.32, "lon": 114.59, "r": 0.5, "risk": 0.85, "label": "Banjarmasin"},
-        {"lat": -2.99, "lon": 104.76, "r": 0.4, "risk": 0.72, "label": "Palembang"},
-        {"lat":  3.59, "lon":  98.67, "r": 0.4, "risk": 0.68, "label": "Medan"},
+        {"lat": -6.21, "lon": 106.84, "r": 0.5, "risk": 0.82, "label": "Jakarta Pusat/Timur"},
+        {"lat": -6.24, "lon": 107.00, "r": 0.5, "risk": 0.78, "label": "Bekasi"},
+        {"lat": -7.38, "lon": 107.32, "r": 0.4, "risk": 0.68, "label": "Garut - DAS Cimanuk"},
+        {"lat": -6.72, "lon": 108.56, "r": 0.4, "risk": 0.65, "label": "Cirebon pesisir"},
+        # Aceh (97 kasus)
+        {"lat":  5.55, "lon":  95.32, "r": 0.5, "risk": 0.85, "label": "Banda Aceh delta"},
+        {"lat":  4.55, "lon":  96.87, "r": 0.5, "risk": 0.80, "label": "Aceh Tengah - Peusangan"},
+        {"lat":  4.14, "lon":  96.13, "r": 0.4, "risk": 0.75, "label": "Aceh Barat pesisir"},
+        # Jawa Tengah (95 kasus)
+        {"lat": -6.97, "lon": 110.42, "r": 0.5, "risk": 0.82, "label": "Semarang rob"},
+        {"lat": -7.15, "lon": 109.92, "r": 0.4, "risk": 0.75, "label": "Pekalongan rob"},
+        {"lat": -6.88, "lon": 109.13, "r": 0.4, "risk": 0.73, "label": "Brebes - Tegal pesisir"},
+        # Riau (79 kasus)
+        {"lat":  0.52, "lon": 101.45, "r": 0.6, "risk": 0.83, "label": "Pekanbaru - DAS Siak"},
+        {"lat":  1.07, "lon": 102.10, "r": 0.5, "risk": 0.78, "label": "Indragiri - Kampar"},
+        # Sumatera Barat (72 kasus)
+        {"lat": -0.95, "lon": 100.35, "r": 0.5, "risk": 0.80, "label": "Padang - DAS Anai"},
+        {"lat": -0.30, "lon":  99.82, "r": 0.4, "risk": 0.72, "label": "Pasaman lembah"},
+        # NTB (69 kasus)
+        {"lat": -8.58, "lon": 116.10, "r": 0.5, "risk": 0.78, "label": "Mataram - Lombok barat"},
+        {"lat": -8.65, "lon": 117.36, "r": 0.4, "risk": 0.72, "label": "Sumbawa - DAS Brang"},
+        # Sulawesi Tengah (61 kasus)
+        {"lat": -0.90, "lon": 119.87, "r": 0.5, "risk": 0.80, "label": "Palu - DAS Palu"},
+        {"lat": -1.38, "lon": 120.75, "r": 0.4, "risk": 0.73, "label": "Poso"},
+        # Sulawesi Selatan (52 kasus)
+        {"lat": -5.14, "lon": 119.41, "r": 0.5, "risk": 0.78, "label": "Makassar - Jeneberang"},
+        {"lat": -3.96, "lon": 119.90, "r": 0.4, "risk": 0.72, "label": "Wajo - Danau Tempe"},
+        # Kalimantan Selatan (48 kasus)
+        {"lat": -3.32, "lon": 114.59, "r": 0.6, "risk": 0.87, "label": "Banjarmasin dataran rendah"},
+        {"lat": -2.53, "lon": 115.40, "r": 0.4, "risk": 0.78, "label": "Barito Kuala rawa"},
+        # Lainnya
+        {"lat": -2.99, "lon": 104.76, "r": 0.4, "risk": 0.72, "label": "Palembang - DAS Musi"},
+        {"lat": -7.25, "lon": 112.75, "r": 0.4, "risk": 0.68, "label": "Surabaya delta Brantas"},
     ]
     safezones = [
         {"lat": -7.43, "lon": 109.23, "r": 0.8, "risk": 0.10, "label": "Pegunungan Banyumas"},
-        {"lat": -6.91, "lon": 107.61, "r": 0.5, "risk": 0.30, "label": "Bandung"},
-        {"lat": -7.80, "lon": 110.36, "r": 0.4, "risk": 0.25, "label": "Yogyakarta"},
-        {"lat": -7.97, "lon": 112.63, "r": 0.4, "risk": 0.20, "label": "Malang"},
-        {"lat": -8.34, "lon": 115.09, "r": 0.6, "risk": 0.18, "label": "Bali Tengah"},
+        {"lat": -6.91, "lon": 107.61, "r": 0.4, "risk": 0.28, "label": "Bandung plateau"},
+        {"lat": -7.80, "lon": 110.36, "r": 0.4, "risk": 0.22, "label": "Yogyakarta plateau"},
+        {"lat": -7.97, "lon": 112.63, "r": 0.4, "risk": 0.18, "label": "Malang highland"},
+        {"lat": -8.34, "lon": 115.09, "r": 0.6, "risk": 0.15, "label": "Bali Tengah"},
+        {"lat":  2.12, "lon":  98.93, "r": 0.5, "risk": 0.20, "label": "Karo - dataran tinggi Batak"},
+        {"lat": -0.91, "lon": 100.46, "r": 0.4, "risk": 0.25, "label": "Bukittinggi - Agam"},
     ]
     best_hot  = min(hotspots,  key=lambda z: math.hypot(lat-z["lat"], lon-z["lon"]))
     best_safe = min(safezones, key=lambda z: math.hypot(lat-z["lat"], lon-z["lon"]))
@@ -325,6 +360,16 @@ async def analyze(req: LocationRequest):
 @app.get("/api/history")
 def history():
     return {"warnings": list(reversed(warnings_history[-30:])), "total": len(warnings_history)}
+
+
+@app.get("/api/weather-demo")
+def weather_demo():
+    """Returns simulated weather data — useful for frontend testing."""
+    import random as _r
+    lat = _r.uniform(-8.0, 5.0)
+    lon = _r.uniform(95.0, 141.0)
+    w   = simulate_weather(lat, lon)
+    return {**w, "lat": round(lat, 4), "lon": round(lon, 4)}
 
 
 @app.get("/health")
